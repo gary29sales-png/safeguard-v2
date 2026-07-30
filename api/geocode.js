@@ -1,4 +1,7 @@
 // api/geocode.js
+// Uses Nominatim (OpenStreetMap) - free, no API key required
+// Reliable for South African addresses
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -16,35 +19,33 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Invalid address.' });
     }
 
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: 'Server configuration error: API key missing.' });
-    }
-
     const query = encodeURIComponent(address + ', South Africa');
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${query}&key=${apiKey}&region=za&language=en`;
+    const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&countrycodes=za`;
 
-    const r = await fetch(url);
+    const r = await fetch(url, {
+      headers: {
+        'User-Agent': 'SafeGuard-RouteRisk/1.0 (traficc.co.za)',
+        'Accept-Language': 'en'
+      }
+    });
+
     const data = await r.json();
 
-    // Return the Google status in the error so we can debug
-    if (data.status !== 'OK' || !data.results || data.results.length === 0) {
+    if (!data || data.length === 0) {
       return res.status(404).json({ 
-        error: `Could not find address (${data.status}). Try a different format e.g. "Sandton, Johannesburg".`,
-        google_status: data.status,
-        error_message: data.error_message || null
+        error: 'Address not found. Try adding the city name, e.g. "Sandton, Johannesburg".' 
       });
     }
 
-    const result = data.results[0];
+    const result = data[0];
     return res.status(200).json({
-      lat: result.geometry.location.lat,
-      lng: result.geometry.location.lng,
-      label: result.formatted_address
+      lat: parseFloat(result.lat),
+      lng: parseFloat(result.lon),
+      label: result.display_name.split(',').slice(0, 3).join(',').trim()
     });
 
   } catch (err) {
     console.error('Geocode error:', err);
-    return res.status(500).json({ error: 'Geocoding failed: ' + err.message });
+    return res.status(500).json({ error: 'Geocoding failed. Please try again.' });
   }
 }
