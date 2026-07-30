@@ -1,8 +1,6 @@
 // api/directions.js
-// Secure server-side proxy for Google Directions API
-// Returns a decoded polyline as an array of {lat, lng} waypoints
+// Uses OSRM (OpenStreetMap routing) - free, no API key required
 
-// Decode Google's encoded polyline format
 function decodePolyline(encoded) {
   const points = [];
   let index = 0, lat = 0, lng = 0;
@@ -32,37 +30,30 @@ export default async function handler(req, res) {
   try {
     const { origin, destination } = req.body;
     if (!origin || !destination) {
-      return res.status(400).json({ error: 'Origin and destination are required.' });
+      return res.status(400).json({ error: 'Origin and destination required.' });
     }
 
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-    if (!apiKey) {
-      console.error('GOOGLE_MAPS_API_KEY not set');
-      return res.status(500).json({ error: 'Server configuration error.' });
-    }
+    // OSRM public API - free routing, no key needed
+    const url = `https://router.project-osrm.org/route/v1/driving/` +
+      `${origin.lng},${origin.lat};${destination.lng},${destination.lat}` +
+      `?overview=full&geometries=polyline`;
 
-    const url = `https://maps.googleapis.com/maps/api/directions/json?` +
-      `origin=${origin.lat},${origin.lng}` +
-      `&destination=${destination.lat},${destination.lng}` +
-      `&mode=driving&region=za&key=${apiKey}`;
+    const r = await fetch(url, {
+      headers: { 'User-Agent': 'SafeGuard-RouteRisk/1.0' }
+    });
 
-    const r = await fetch(url);
     const data = await r.json();
 
-    if (data.status !== 'OK' || !data.routes || data.routes.length === 0) {
+    if (!data.routes || data.routes.length === 0) {
       return res.status(404).json({ error: 'Could not calculate a route between those locations.' });
     }
 
     const route = data.routes[0];
-    const points = decodePolyline(route.overview_polyline.points);
-    const distance = route.legs.reduce((sum, leg) => sum + leg.distance.value, 0);
-    const duration = route.legs.reduce((sum, leg) => sum + leg.duration.value, 0);
+    const points = decodePolyline(route.geometry);
+    const distance_km = Math.round(route.distance / 1000);
+    const duration_min = Math.round(route.duration / 60);
 
-    return res.status(200).json({
-      points,
-      distance_km: Math.round(distance / 1000),
-      duration_min: Math.round(duration / 60)
-    });
+    return res.status(200).json({ points, distance_km, duration_min });
 
   } catch (err) {
     console.error('Directions error:', err);
