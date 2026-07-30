@@ -1,7 +1,4 @@
 // api/geocode.js
-// Secure server-side proxy for Google Geocoding API
-// The API key is stored as a Vercel environment variable — never exposed to the browser
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -21,8 +18,7 @@ export default async function handler(req, res) {
 
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
-      console.error('GOOGLE_MAPS_API_KEY not set');
-      return res.status(500).json({ error: 'Server configuration error.' });
+      return res.status(500).json({ error: 'Server configuration error: API key missing.' });
     }
 
     const query = encodeURIComponent(address + ', South Africa');
@@ -31,8 +27,13 @@ export default async function handler(req, res) {
     const r = await fetch(url);
     const data = await r.json();
 
+    // Return the Google status in the error so we can debug
     if (data.status !== 'OK' || !data.results || data.results.length === 0) {
-      return res.status(404).json({ error: 'Address not found. Try including the suburb and city name.' });
+      return res.status(404).json({ 
+        error: `Could not find address (${data.status}). Try a different format e.g. "Sandton, Johannesburg".`,
+        google_status: data.status,
+        error_message: data.error_message || null
+      });
     }
 
     const result = data.results[0];
@@ -44,6 +45,6 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('Geocode error:', err);
-    return res.status(500).json({ error: 'Geocoding failed. Please try again.' });
+    return res.status(500).json({ error: 'Geocoding failed: ' + err.message });
   }
 }
